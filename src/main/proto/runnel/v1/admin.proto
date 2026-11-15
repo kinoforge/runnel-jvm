@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package runnel.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/kinoforge/runnel/gen/runnel/v1;runnelv1";
+
+service AdminService {
+  rpc ListNamespaces(ListNamespacesRequest) returns (ListNamespacesResponse);
+  rpc PutNamespace(PutNamespaceRequest) returns (PutNamespaceResponse);
+  rpc DeleteNamespace(DeleteNamespaceRequest) returns (DeleteNamespaceResponse);
+  rpc CreateKey(CreateKeyRequest) returns (CreateKeyResponse);
+  rpc ListKeys(ListKeysRequest) returns (ListKeysResponse);
+  rpc DeleteKey(DeleteKeyRequest) returns (DeleteKeyResponse);
+}
+
+message Namespace {
+  string name = 1;
+  bool has_callback_secret = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message ListNamespacesRequest {}
+
+message ListNamespacesResponse {
+  repeated Namespace namespaces = 1;
+}
+
+message PutNamespaceRequest {
+  string name = 1;
+  optional string callback_secret = 2;
+}
+
+message PutNamespaceResponse {
+  Namespace namespace = 1;
+  bool created = 2;
+}
+
+message DeleteNamespaceRequest {
+  string name = 1;
+}
+
+message DeleteNamespaceResponse {}
+
+message Key {
+  string id = 1;
+  string namespace = 2;
+  string name = 3;
+  repeated string roles = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+message CreateKeyRequest {
+  string namespace = 1;
+  string name = 2;
+  repeated string roles = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message CreateKeyResponse {
+  Key key = 1;
+  string token = 2;
+}
+
+message ListKeysRequest {
+  string namespace = 1;
+}
+
+message ListKeysResponse {
+  repeated Key keys = 1;
+}
+
+message DeleteKeyRequest {
+  string namespace = 1;
+  string id = 2;
+}
+
+message DeleteKeyResponse {}

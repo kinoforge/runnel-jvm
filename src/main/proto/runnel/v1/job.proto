@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package runnel.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "runnel/v1/types.proto";
+
+option go_package = "github.com/kinoforge/runnel/gen/runnel/v1;runnelv1";
+
+service JobService {
+  rpc Enqueue(EnqueueRequest) returns (EnqueueResponse);
+  rpc EnqueueFlow(EnqueueFlowRequest) returns (EnqueueFlowResponse);
+  rpc GetJob(GetJobRequest) returns (GetJobResponse);
+  rpc WaitJob(WaitJobRequest) returns (WaitJobResponse);
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+  rpc RetryJob(RetryJobRequest) returns (RetryJobResponse);
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse);
+}
+
+message EnqueueRequest {
+  string namespace = 1;
+  repeated NewJob jobs = 2;
+}
+
+message EnqueueResponse {
+  repeated Inserted results = 1;
+}
+
+message FlowStep {
+  string name = 1;
+  NewJob job = 2;
+  repeated string after = 3;
+}
+
+message EnqueueFlowRequest {
+  string namespace = 1;
+  repeated FlowStep steps = 2;
+}
+
+message EnqueueFlowResponse {
+  map<string, Inserted> steps = 1;
+}
+
+message GetJobRequest {
+  string namespace = 1;
+  string id = 2;
+}
+
+message GetJobResponse {
+  Job job = 1;
+}
+
+message WaitJobRequest {
+  string namespace = 1;
+  string id = 2;
+  google.protobuf.Duration wait = 3;
+}
+
+message WaitJobResponse {
+  Job job = 1;
+  bool finished = 2;
+}
+
+message ListJobsRequest {
+  string namespace = 1;
+  string queue = 2;
+  string kind = 3;
+  string group = 4;
+  State state = 5;
+  string cursor = 6;
+  int32 limit = 7;
+}
+
+message ListJobsResponse {
+  repeated Job jobs = 1;
+  string next_cursor = 2;
+}
+
+message CancelJobRequest {
+  string namespace = 1;
+  string id = 2;
+}
+
+message CancelJobResponse {
+  Job job = 1;
+}
+
+message RetryJobRequest {
+  string namespace = 1;
+  string id = 2;
+}
+
+message RetryJobResponse {
+  Job job = 1;
+}
+
+message GetStatsRequest {
+  string namespace = 1;
+}
+
+message QueueStats {
+  string queue = 1;
+  map<string, int64> counts = 2;
+}
+
+message GetStatsResponse {
+  repeated QueueStats queues = 1;
+}
+
+message ListEventsRequest {
+  string namespace = 1;
+  int64 after = 2;
+  int32 limit = 3;
+}
+
+message Event {
+  int64 seq = 1;
+  string job_id = 2;
+  string queue = 3;
+  string kind = 4;
+  State state = 5;
+  google.protobuf.Timestamp at = 6;
+}
+
+message ListEventsResponse {
+  repeated Event events = 1;
+}

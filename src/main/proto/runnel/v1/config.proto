@@ -1,0 +1,167 @@
+syntax = "proto3";
+
+package runnel.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "runnel/v1/types.proto";
+
+option go_package = "github.com/kinoforge/runnel/gen/runnel/v1;runnelv1";
+
+service ConfigService {
+  rpc ListQueues(ListSettingsRequest) returns (ListQueuesResponse);
+  rpc GetQueue(GetSettingRequest) returns (QueueSetting);
+  rpc PutQueue(PutQueueRequest) returns (QueueSetting);
+  rpc PatchQueue(PatchQueueRequest) returns (QueueSetting);
+  rpc DeleteQueue(DeleteSettingRequest) returns (DeleteSettingResponse);
+
+  rpc ListPools(ListSettingsRequest) returns (ListPoolsResponse);
+  rpc GetPool(GetSettingRequest) returns (PoolSetting);
+  rpc PutPool(PutPoolRequest) returns (PoolSetting);
+  rpc PatchPool(PatchPoolRequest) returns (PoolSetting);
+  rpc DeletePool(DeleteSettingRequest) returns (DeleteSettingResponse);
+
+  rpc ListSchedules(ListSettingsRequest) returns (ListSchedulesResponse);
+  rpc GetSchedule(GetSettingRequest) returns (ScheduleSetting);
+  rpc PutSchedule(PutScheduleRequest) returns (ScheduleSetting);
+  rpc PatchSchedule(PatchScheduleRequest) returns (ScheduleSetting);
+  rpc DeleteSchedule(DeleteSettingRequest) returns (DeleteSettingResponse);
+}
+
+message Queue {
+  string name = 1;
+  bool paused = 2;
+  int32 max_running = 3;
+  int32 group_max_running = 4;
+  int32 group_max_queued = 5;
+  int32 max_queued = 6;
+  double rate = 7;
+  int32 burst = 8;
+  double group_rate = 9;
+  int32 group_burst = 10;
+  int32 max_attempts = 11;
+  Backoff backoff = 12;
+  google.protobuf.Duration timeout = 13;
+  google.protobuf.Duration start_timeout = 14;
+  google.protobuf.Duration ttl = 15;
+  google.protobuf.Duration wait = 16;
+  google.protobuf.Duration retention = 17;
+  google.protobuf.Duration dead_retention = 18;
+  string callback_url = 19;
+}
+
+message Pool {
+  string name = 1;
+  int32 slots = 2;
+  int32 group_slots = 3;
+  double rate = 4;
+  int32 burst = 5;
+  bool paused = 6;
+  google.protobuf.Timestamp paused_until = 7;
+}
+
+message Schedule {
+  string name = 1;
+  string spec = 2;
+  string timezone = 3;
+  bool paused = 4;
+  string queue = 5;
+  string kind = 6;
+  bytes payload = 7;
+  int32 priority = 8;
+  string group = 9;
+  string pool = 10;
+  int32 max_attempts = 11;
+  google.protobuf.Duration timeout = 12;
+  string callback_url = 13;
+  map<string, string> meta = 14;
+  string overlap = 15;
+}
+
+message Precondition {
+  string if_match = 1;
+  bool if_none_match = 2;
+}
+
+message ListSettingsRequest {
+  string namespace = 1;
+}
+
+message GetSettingRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message DeleteSettingRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message DeleteSettingResponse {}
+
+message QueueSetting {
+  Queue queue = 1;
+  string etag = 2;
+}
+
+message ListQueuesResponse {
+  repeated Queue queues = 1;
+}
+
+message PutQueueRequest {
+  string namespace = 1;
+  Queue queue = 2;
+  Precondition precondition = 3;
+}
+
+message PatchQueueRequest {
+  string namespace = 1;
+  Queue queue = 2;
+  google.protobuf.FieldMask update_mask = 3;
+  Precondition precondition = 4;
+}
+
+message PoolSetting {
+  Pool pool = 1;
+  string etag = 2;
+}
+
+message ListPoolsResponse {
+  repeated Pool pools = 1;
+}
+
+message PutPoolRequest {
+  string namespace = 1;
+  Pool pool = 2;
+  Precondition precondition = 3;
+}
+
+message PatchPoolRequest {
+  string namespace = 1;
+  Pool pool = 2;
+  google.protobuf.FieldMask update_mask = 3;
+  Precondition precondition = 4;
+}
+
+message ScheduleSetting {
+  Schedule schedule = 1;
+  string etag = 2;
+}
+
+message ListSchedulesResponse {
+  repeated Schedule schedules = 1;
+}
+
+message PutScheduleRequest {
+  string namespace = 1;
+  Schedule schedule = 2;
+  Precondition precondition = 3;
+}
+
+message PatchScheduleRequest {
+  string namespace = 1;
+  Schedule schedule = 2;
+  google.protobuf.FieldMask update_mask = 3;
+  Precondition precondition = 4;
+}

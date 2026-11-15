@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+package runnel.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "runnel/v1/types.proto";
+
+option go_package = "github.com/kinoforge/runnel/gen/runnel/v1;runnelv1";
+
+service WorkerService {
+  rpc Claim(ClaimRequest) returns (ClaimResponse);
+  rpc Extend(ExtendRequest) returns (ExtendResponse);
+  rpc Finish(FinishRequest) returns (FinishResponse);
+  rpc Dependencies(DependenciesRequest) returns (DependenciesResponse);
+  rpc Work(stream WorkRequest) returns (stream WorkResponse);
+}
+
+message ClaimRequest {
+  string namespace = 1;
+  string worker = 2;
+  repeated string queues = 3;
+  int32 limit = 4;
+  google.protobuf.Duration lease = 5;
+  google.protobuf.Duration wait = 6;
+}
+
+message ClaimResponse {
+  repeated Job jobs = 1;
+  google.protobuf.Timestamp now = 2;
+}
+
+message ExtendRequest {
+  string namespace = 1;
+  string worker = 2;
+  repeated string ids = 3;
+  google.protobuf.Duration lease = 4;
+}
+
+message ExtendResponse {
+  repeated string lost = 1;
+  google.protobuf.Timestamp now = 2;
+}
+
+enum OutcomeKind {
+  OUTCOME_KIND_UNSPECIFIED = 0;
+  OUTCOME_KIND_DONE = 1;
+  OUTCOME_KIND_RETRY = 2;
+  OUTCOME_KIND_FAIL = 3;
+  OUTCOME_KIND_BUSY = 4;
+  OUTCOME_KIND_PENDING = 5;
+  OUTCOME_KIND_RELEASE = 6;
+}
+
+message Outcome {
+  OutcomeKind kind = 1;
+  string error = 2;
+  bytes result = 3;
+  google.protobuf.Duration delay = 4;
+  string handle = 5;
+}
+
+message FinishRequest {
+  string namespace = 1;
+  string worker = 2;
+  string id = 3;
+  int64 version = 4;
+  Outcome outcome = 5;
+  bytes payload = 6;
+  map<string, string> meta = 7;
+}
+
+message FinishResponse {}
+
+message DependenciesRequest {
+  string namespace = 1;
+  repeated string ids = 2;
+}
+
+message DependenciesResponse {
+  repeated Job jobs = 1;
+}
+
+message WorkStart {
+  string namespace = 1;
+  string worker = 2;
+  repeated string queues = 3;
+  google.protobuf.Duration lease = 4;
+}
+
+message WorkRequest {
+  oneof msg {
+    WorkStart start = 1;
+    int32 credit = 2;
+    ExtendRequest extend = 3;
+    FinishRequest finish = 4;
+  }
+}
+
+message WorkFinished {
+  string id = 1;
+  string error = 2;
+}
+
+message WorkResponse {
+  google.protobuf.Timestamp now = 1;
+  oneof msg {
+    Job job = 2;
+    ExtendResponse extended = 3;
+    WorkFinished finished = 4;
+  }
+}

@@ -1,0 +1,67 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+env:
+  RUNNEL_VERSION: 0.0.4-beta.1
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - run: ./gradlew --no-daemon ktlintCheck assemble publishToMavenLocal
+  proto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: ./scripts/sync-proto.sh
+      - run: git add -N src/main/proto && git diff --exit-code -- src/main/proto
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java: ["17", "21", "25"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: gradle
+      - run: ./gradlew --no-daemon test
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        java: ["17", "25"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: gradle
+      - name: start runnel
+        run: |
+          docker run -d --name runnel --network host \
+            -e RUNNEL_ADDR=127.0.0.1:8700 \
+            -e RUNNEL_ADMIN_TOKEN=contract-admin-token-0123456789 \
+            -e RUNNEL_SERVER_MIN_LEASE=1s \
+            -e RUNNEL_SERVER_ALLOW_HTTP_CALLBACKS=true \
+            -e RUNNEL_CALLBACKS_ALLOW_PRIVATE=true \
+            ghcr.io/kinoforge/runnel:${RUNNEL_VERSION}
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8700/healthz && break; sleep 1; done
+      - run: ./gradlew --no-daemon contractTest
+        env:
+          RUNNEL_URL: http://127.0.0.1:8700
+      - if: failure()
+        run: docker logs runnel

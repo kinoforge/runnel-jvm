@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package runnel.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/kinoforge/runnel/gen/runnel/v1;runnelv1";
+
+enum State {
+  STATE_UNSPECIFIED = 0;
+  STATE_BLOCKED = 1;
+  STATE_WAITING = 2;
+  STATE_RUNNING = 3;
+  STATE_POLLING = 4;
+  STATE_COMPLETED = 5;
+  STATE_DEAD = 6;
+  STATE_CANCELLED = 7;
+  STATE_EXPIRED = 8;
+}
+
+message Backoff {
+  google.protobuf.Duration base = 1;
+  google.protobuf.Duration max = 2;
+  double factor = 3;
+  double jitter = 4;
+}
+
+message AttemptError {
+  int32 attempt = 1;
+  string queue = 2;
+  string kind = 3;
+  google.protobuf.Timestamp at = 4;
+  string error = 5;
+}
+
+message Job {
+  string id = 1;
+  string namespace = 2;
+  string queue = 3;
+  string kind = 4;
+  bytes payload = 5;
+  int32 priority = 6;
+  string group = 7;
+  string pool = 8;
+  State state = 9;
+  int32 attempt = 10;
+  int32 max_attempts = 11;
+  google.protobuf.Timestamp run_at = 12;
+  google.protobuf.Timestamp waiting_since = 13;
+  google.protobuf.Duration start_timeout = 14;
+  google.protobuf.Timestamp start_by = 15;
+  google.protobuf.Timestamp deadline = 16;
+  google.protobuf.Duration timeout = 17;
+  Backoff backoff = 18;
+  string worker = 19;
+  google.protobuf.Timestamp lease_until = 20;
+  int64 version = 21;
+  string handle = 22;
+  string unique_key = 23;
+  google.protobuf.Duration unique_for = 24;
+  repeated string depends_on = 25;
+  int32 pending = 26;
+  string callback_url = 27;
+  map<string, string> meta = 28;
+  bytes result = 29;
+  repeated AttemptError errors = 30;
+  google.protobuf.Timestamp created_at = 31;
+  google.protobuf.Timestamp updated_at = 32;
+  google.protobuf.Timestamp started_at = 33;
+  google.protobuf.Timestamp finished_at = 34;
+}
+
+message NewJob {
+  string queue = 1;
+  string kind = 2;
+  bytes payload = 3;
+  int32 priority = 4;
+  string group = 5;
+  string pool = 6;
+  google.protobuf.Timestamp run_at = 7;
+  google.protobuf.Duration delay = 8;
+  int32 max_attempts = 9;
+  string unique_key = 10;
+  google.protobuf.Duration unique_for = 11;
+  google.protobuf.Duration start_timeout = 12;
+  google.protobuf.Timestamp deadline = 13;
+  google.protobuf.Duration ttl = 14;
+  google.protobuf.Duration timeout = 15;
+  Backoff backoff = 16;
+  repeated string depends_on = 17;
+  string callback_url = 18;
+  map<string, string> meta = 19;
+}
+
+message Inserted {
+  string id = 1;
+  bool duplicate = 2;
+  string error = 3;
+}
