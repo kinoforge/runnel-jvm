@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- A heartbeat that times out is followed by the next one at once, as in the Go worker. Before, the next beat was skipped, so one slow `Extend` could lose every running job's lease.
+- A job that ends while the work stream reconnects no longer gives the server one credit too many, which let the worker run more jobs than `concurrency`.
+
 ## [0.1.0-beta.1] - 2026-11-16
 
 First release. Works with Runnel 0.0.4 or later.

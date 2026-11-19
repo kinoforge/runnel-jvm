@@ -35,7 +35,7 @@ internal class FeedConfig(
 internal interface Feed {
     suspend fun run()
 
-    fun grant(n: Int)
+    fun freed(release: () -> Unit)
 
     fun stop()
 
@@ -71,6 +71,8 @@ internal class StreamFeed(
 
     @Volatile private var session: kotlinx.coroutines.Job? = null
 
+    private val credit = Any()
+
     @Volatile private var stopped = false
     private val aborted = CompletableDeferred<Unit>()
 
@@ -87,8 +89,10 @@ internal class StreamFeed(
                         .addAllQueues(c.queues)
                         .setLease(c.lease.toProto())
                 q.trySend(WorkRequest.newBuilder().setStart(start).build())
-                out = q
-                grant(c.free())
+                synchronized(credit) {
+                    out = q
+                    send(c.free())
+                }
                 val s =
                     launch {
                         try {
@@ -113,7 +117,14 @@ internal class StreamFeed(
             }
         }
 
-    override fun grant(n: Int) {
+    override fun freed(release: () -> Unit) {
+        synchronized(credit) {
+            release()
+            send(1)
+        }
+    }
+
+    private fun send(n: Int) {
         if (n > 0) out?.trySend(WorkRequest.newBuilder().setCredit(n).build())
     }
 
@@ -185,7 +196,8 @@ internal class PollFeed(
             }
         }
 
-    override fun grant(n: Int) {
+    override fun freed(release: () -> Unit) {
+        release()
         wake.trySend(Unit)
     }
 

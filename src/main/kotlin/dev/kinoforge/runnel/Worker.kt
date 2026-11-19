@@ -222,8 +222,8 @@ public class Worker(
             }
             finish(r.pb, outcome)
         } finally {
-            running.remove(r.pb.id, r)
-            feed?.grant(1)
+            val f = feed
+            if (f == null) running.remove(r.pb.id, r) else f.freed { running.remove(r.pb.id, r) }
         }
     }
 
@@ -303,14 +303,15 @@ public class Worker(
         return call { client.rpc.workers.dependencies(req) }.jobsList.map { Job(it, client.codec) }
     }
 
-    private suspend fun beats(): Unit =
-        coroutineScope {
-            var beat: kotlinx.coroutines.Job? = null
-            while (true) {
-                delay(options.lease.dividedBy(3).toKotlinDuration())
-                if (beat?.isActive != true) beat = launch { heartbeat() }
-            }
+    private suspend fun beats() {
+        val every = options.lease.dividedBy(3).toNanos()
+        var due = System.nanoTime() + every
+        while (true) {
+            delay(Duration.ofNanos(maxOf(0L, due - System.nanoTime())).toKotlinDuration())
+            heartbeat()
+            due = maxOf(due + every, System.nanoTime())
         }
+    }
 
     private suspend fun heartbeat() {
         val sent = HashMap(running)
