@@ -7,11 +7,11 @@ import tools.jackson.databind.MapperFeature
 import tools.jackson.databind.json.JsonMapper
 import tools.jackson.module.kotlin.KotlinModule
 import java.security.MessageDigest
+import java.time.DateTimeException
 import java.time.Duration
 import java.time.Instant
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
-import kotlin.math.abs
 
 public val DEFAULT_MAX_AGE: Duration = Duration.ofMinutes(5)
 
@@ -90,11 +90,15 @@ public fun verifyCallback(
 ) {
     val limit = maxAge?.takeIf { !it.isZero && !it.isNegative } ?: DEFAULT_MAX_AGE
     val (t, sigs) = parse(header)
-    val age = (now ?: Instant.now()).toEpochMilli() - t * 1000
-    if (abs(age) >
-        limit.toMillis()
-    ) {
-        throw SignatureException("runnel: bad callback signature: signed ${Math.round(age / 1000.0)}s from now")
+    val signedAt =
+        try {
+            Instant.ofEpochSecond(t)
+        } catch (_: DateTimeException) {
+            throw SignatureException("runnel: bad callback signature: bad time")
+        }
+    val age = Duration.between(signedAt, now ?: Instant.now())
+    if (age.abs() > limit) {
+        throw SignatureException("runnel: bad callback signature: signed ${age.seconds}s from now")
     }
     for (secret in secrets) {
         if (secret.isEmpty()) continue

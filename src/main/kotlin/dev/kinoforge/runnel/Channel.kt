@@ -33,6 +33,11 @@ internal fun target(url: String): Target {
             "https" -> true
             else -> throw IllegalArgumentException("runnel: url must start with http:// or https://: \"$url\"")
         }
+    if (u.rawUserInfo != null || (u.rawPath != null && u.rawPath.isNotEmpty() && u.rawPath != "/") || u.rawQuery != null ||
+        u.rawFragment != null
+    ) {
+        throw IllegalArgumentException("runnel: url must contain only scheme, host and optional port; pass credentials via token")
+    }
     val host =
         u.host?.removeSurrounding("[", "]")?.takeIf { it.isNotEmpty() }
             ?: throw IllegalArgumentException("runnel: url has no host: \"$url\"")

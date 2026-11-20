@@ -151,7 +151,7 @@ public class RunnelClient(
                     .build()
             val res = call { rpc.jobs.waitJob(req) }
             val j = job(if (res.hasJob()) res.job else null)
-            if (res.finished || j.isFinal || (until != null && System.nanoTime() >= until)) return j
+            if (res.finished || j.isFinal || (until != null && System.nanoTime() - until >= 0L)) return j
         }
     }
 

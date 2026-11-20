@@ -74,6 +74,7 @@ internal class StreamFeed(
     private val credit = Any()
 
     @Volatile private var stopped = false
+    private val stopWake = CompletableDeferred<Unit>()
     private val aborted = CompletableDeferred<Unit>()
 
     override suspend fun run(): Unit =
@@ -113,7 +114,7 @@ internal class StreamFeed(
                 session = null
                 out = null
                 q.close()
-                if (!stopped) backoff.wait(aborted)
+                if (!stopped) backoff.wait(stopWake)
             }
         }
 
@@ -130,6 +131,7 @@ internal class StreamFeed(
 
     override fun stop() {
         stopped = true
+        stopWake.complete(Unit)
         out?.close()
     }
 
@@ -203,6 +205,8 @@ internal class PollFeed(
 
     override fun stop() {
         stopped = true
+        aborted.complete(Unit)
+        call?.cancel()
         wake.trySend(Unit)
     }
 

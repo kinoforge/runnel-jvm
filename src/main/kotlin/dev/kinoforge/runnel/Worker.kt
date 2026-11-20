@@ -42,6 +42,7 @@ public class Worker(
     private val log get() = options.logger
     private val handlers = ConcurrentHashMap<String, Handlers>()
     private val running = ConcurrentHashMap<String, Run>()
+    private val releasing = ConcurrentHashMap.newKeySet<kotlinx.coroutines.Job>()
     private val started = AtomicBoolean(false)
     private val stopping = AtomicBoolean(false)
     private val stopSignal = CompletableDeferred<Unit>()
@@ -111,6 +112,9 @@ public class Worker(
 
     public suspend fun run() {
         require(queues.isNotEmpty() && handlers.isNotEmpty()) { "runnel: a worker needs queues and handlers" }
+        require(options.concurrency > 0 && !options.lease.isZero && !options.lease.isNegative) {
+            "runnel: concurrency and lease must be positive"
+        }
         check(started.compareAndSet(false, true)) { "runnel: worker is already running" }
         supervisorScope {
             scope = this
@@ -160,7 +164,7 @@ public class Worker(
     ): Boolean = withTimeoutOrNull(d.toKotlinDuration()) { block() } != null
 
     private suspend fun drained() {
-        running.values.mapNotNull { it.done }.joinAll()
+        (running.values.mapNotNull { it.done } + releasing.toList()).joinAll()
     }
 
     private fun spawn(block: suspend () -> Unit): kotlinx.coroutines.Job {
@@ -170,12 +174,17 @@ public class Worker(
 
     private fun deliver(pb: Types.Job) {
         if (stopping.get()) {
-            spawn { finish(pb, release()) }.start()
+            val j = spawn { finish(pb, release()) }
+            releasing += j
+            j.invokeOnCompletion { releasing -= j }
+            j.start()
             return
         }
         val now = client.clock.now()
         val until = if (pb.hasLeaseUntil()) pb.leaseUntil.toInstant() else now.plus(options.lease)
-        val r = Run(pb, Job(pb, client.codec), Duration.between(now, until), until)
+        val granted = Duration.between(now, until)
+        val lease = if (granted.isZero || granted.isNegative) options.lease else minOf(options.lease, granted)
+        val r = Run(pb, Job(pb, client.codec), lease, until)
         running[pb.id] = r
         val t = spawn { execute(r) }
         r.done = t
@@ -237,27 +246,34 @@ public class Worker(
                 r.attach(t)
                 try {
                     Result.success(t.await())
+                } catch (e: Error) {
+                    throw e
                 } catch (e: Throwable) {
                     currentCoroutineContext().ensureActive()
                     Result.failure(e)
                 }
             }
         return value.fold(
-            onSuccess = { v -> if (v is Control) v.outcome else runCatching { done(client.codec.bytes(v)) }.getOrElse(::retry) },
+            onSuccess = { v ->
+                abortedOutcome(r.reason)
+                    ?: if (v is Control) v.outcome else runCatching { done(client.codec.bytes(v)) }.getOrElse(::retry)
+            },
             onFailure = { e -> classify(e, r.reason) },
         )
     }
 
-    private fun classify(
-        err: Throwable,
-        reason: CancellationException?,
-    ): Outcome =
+    private fun abortedOutcome(reason: CancellationException?): Outcome? =
         when (reason) {
             is ShutdownException -> release()
             is JobTimeoutException -> retry("timed out after ${reason.timeout.text()}s")
             is DeadlineException -> fail("deadline passed").outcome
-            else -> if (err is Control) err.outcome else retry(err)
+            else -> null
         }
+
+    private fun classify(
+        err: Throwable,
+        reason: CancellationException?,
+    ): Outcome = abortedOutcome(reason) ?: if (err is Control) err.outcome else retry(err)
 
     private suspend fun finish(
         pb: Types.Job,
