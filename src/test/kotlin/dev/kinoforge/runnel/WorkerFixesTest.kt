@@ -5,6 +5,7 @@ import io.grpc.Server
 import io.grpc.ServerBuilder
 import io.grpc.Status
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -25,22 +26,32 @@ import runnel.v1.Worker.OutcomeKind
 import runnel.v1.WorkerServiceGrpcKt
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
 
 class WorkerFixesTest {
     private class Fake(
-        private val jobs: List<Types.Job>,
+        jobs: List<Types.Job>,
+        jobsAgain: List<Types.Job> = emptyList(),
+        private val after: CompletableDeferred<Unit> = CompletableDeferred(Unit),
+        private val grant: Duration? = null,
         private val beat: (Int) -> Unit = {},
     ) : WorkerServiceGrpcKt.WorkerServiceCoroutineImplBase() {
         val finished = CopyOnWriteArrayList<OutcomeKind>()
-        private val claimed = AtomicBoolean()
+        val claimedAt = CopyOnWriteArrayList<Instant>()
+        private val batches = ConcurrentLinkedQueue(listOf(jobs) + listOf(jobsAgain).filter { it.isNotEmpty() })
+        private val claims = AtomicInteger()
         private val beats = AtomicInteger()
 
         override suspend fun claim(request: ClaimRequest): ClaimResponse {
-            if (claimed.getAndSet(true)) awaitCancellation()
+            if (claims.incrementAndGet() > 1) after.await()
+            val next = batches.poll() ?: awaitCancellation()
+            val now = Instant.now()
+            claimedAt += now
+            val until = grant?.let { now.plus(it) }
+            val jobs = if (until == null) next else next.map { it.toBuilder().setLeaseUntil(until.toTimestamp()).build() }
             return ClaimResponse.newBuilder().addAllJobs(jobs).build()
         }
 
@@ -54,6 +65,13 @@ class WorkerFixesTest {
             return FinishResponse.getDefaultInstance()
         }
     }
+
+    private fun Instant.toTimestamp(): Timestamp =
+        Timestamp
+            .newBuilder()
+            .setSeconds(epochSecond)
+            .setNanos(nano)
+            .build()
 
     private val servers = mutableListOf<Server>()
     private val clients = mutableListOf<RunnelClient>()
@@ -99,18 +117,7 @@ class WorkerFixesTest {
 
     @Test
     fun `a heartbeat renews by the lease the server granted`() {
-        val start = Instant.now()
-        val until = start.plusSeconds(1)
-        val granted =
-            job("j1") {
-                leaseUntil =
-                    Timestamp
-                        .newBuilder()
-                        .setSeconds(until.epochSecond)
-                        .setNanos(until.nano)
-                        .build()
-            }
-        val fake = Fake(listOf(granted)) { n -> if (n > 1) throw Status.UNAVAILABLE.asException() }
+        val fake = Fake(listOf(job("j1")), grant = Duration.ofSeconds(1)) { n -> if (n > 1) throw Status.UNAVAILABLE.asException() }
         val lostAt = CopyOnWriteArrayList<Instant>()
         val worker =
             Worker(client(fake), listOf("q")) {
@@ -130,7 +137,7 @@ class WorkerFixesTest {
         waitFor("the lease to end") { lostAt.isNotEmpty() }
         worker.stop()
         run.join()
-        val took = Duration.between(start, lostAt[0])
+        val took = Duration.between(fake.claimedAt[0], lostAt[0])
         assertTrue(took < Duration.ofMillis(3600), "the job was lost $took after it was granted")
     }
 
@@ -163,6 +170,35 @@ class WorkerFixesTest {
         worker.stop()
         run.join()
         assertEquals(OutcomeKind.OUTCOME_KIND_RETRY, fake.finished[0])
+    }
+
+    @Test
+    fun `a job handed out again ends the run that still held it`() {
+        val started = CompletableDeferred<Unit>()
+        val fake = Fake(listOf(job("j1") { version = 1 }), jobsAgain = listOf(job("j1") { version = 2 }), after = started)
+        val calls = AtomicInteger()
+        val reason = CopyOnWriteArrayList<Throwable?>()
+        val worker =
+            Worker(client(fake), listOf("q")) {
+                mode = WorkMode.POLL
+                shutdownTimeout = Duration.ofMillis(200)
+            }
+        worker.handle("k") { _, ctx ->
+            if (calls.incrementAndGet() > 1) return@handle "second"
+            started.complete(Unit)
+            try {
+                awaitCancellation()
+            } finally {
+                reason += ctx.reason
+            }
+        }
+        val run = worker.start()
+        waitFor("the second run to finish") { fake.finished.isNotEmpty() }
+        waitFor("the first run to end") { reason.isNotEmpty() }
+        worker.stop()
+        run.join()
+        assertTrue(reason[0] is LeaseLostException, "the first run ended with ${reason[0]}")
+        assertEquals(listOf(OutcomeKind.OUTCOME_KIND_DONE), fake.finished.toList())
     }
 
     @Test

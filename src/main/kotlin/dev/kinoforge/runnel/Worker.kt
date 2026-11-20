@@ -185,6 +185,7 @@ public class Worker(
         val granted = Duration.between(now, until)
         val lease = if (granted.isZero || granted.isNegative) options.lease else minOf(options.lease, granted)
         val r = Run(pb, Job(pb, client.codec), lease, until)
+        running[pb.id]?.let { lose(pb.id, it) }
         running[pb.id] = r
         val t = spawn { execute(r) }
         r.done = t
